@@ -89,7 +89,7 @@ int ALU(int rs , int b ,char* opcode , bool* Btaken){
     return result;
 }
 
-void controlUnit(char* opcode , bool* regdest , bool* alusrc,bool* MemToReg,bool* JalrToReg,bool* BranchToPc, bool* JumpToPc ,  bool* regWrite , bool* memWrite){
+void controlUnit(char* opcode , bool* regdest , bool* alusrc,bool* MemToReg,bool* JalrToReg,bool* BranchToPc, bool* JumpToPc ,  bool* regWrite , bool* memWrite , int* memCount){
     // R instructions
     if ( strcmp(opcode , "0000") == 0 || strcmp(opcode , "0001") == 0 || strcmp(opcode , "0010") == 0 || strcmp(opcode , "0011") == 0 ||strcmp(opcode , "0100") == 0){
         *regdest = true;
@@ -107,22 +107,23 @@ void controlUnit(char* opcode , bool* regdest , bool* alusrc,bool* MemToReg,bool
         *alusrc = true;
         *MemToReg = true;
         *regWrite = true;
-
+        (*memCount)++;
     }
     
     // sw
     else if (strcmp(opcode , "1010") == 0){
         *alusrc = true;
         *memWrite = true;
+        (*memCount)++;
     }
 
     // beq
-    else if ( strcmp(opcode , "1010") == 0){
+    else if ( strcmp(opcode , "1011") == 0){
         *BranchToPc = true;
     }
 
     //jalr
-    else if (strcmp(opcode , "1010") == 0){
+    else if (strcmp(opcode , "1100") == 0){
         *JalrToReg = true;
         *JumpToPc = true;
     }
@@ -163,12 +164,91 @@ void extend4To32bits(char* n , char* extN){
     strcat(extN , n );
 }
 
+void showRegInfo(int cycleCount){
+    printf("\tcycle : %d\n"  , cycleCount);
+    for (int i = 0 ; i < 18 ; i++)
+        printf("_");
+    printf("\n|");
+    // int colums = 2;
+    for (int i = 0; i < 16 ; i++){
+        printf("R%d = %d" , i , REGISTER_FILE[i]);
+        for(int j = 0 ; j < 2 ; j++)
+            printf("\t");
+        printf("|\n|");
+        // if (i == 9) colums = 1;
+    }
+    for (int i = 0 ; i < 18 ; i++)
+            printf("_"); 
+}
+
+void calculateRegPercent(double* regPercent){
+    int sum = 0 ;
+    for (int i = 0 ; i < 16 ; i++)
+        sum += regPercent[i];
+    for( int i = 0 ; i < 16 ; i++)
+        regPercent[i] = (regPercent[i]/sum) * 100;
+}
+
+void showInfo(double* regPercent , int cycleCount , int memCount){
+    printf("\n          *** INFORMATION ***            \n");
+
+    for (int i = 0 ; i < 50 ; i++)
+        printf("_");
+
+    printf("\n|");
+    printf("\t register percentage info:");
+    for(int j = 0 ; j < 2 ; j++)
+        printf("\t");
+    printf("|\n|");
+    // int columns = 22;
+    for (int i = 0; i < 16 ; i++){
+        printf("R%d use percentage = %.2f%%  " , i , regPercent[i]);
+        for(int j = 0 ; j < 3 ; j++)
+            printf("\t");
+        printf("|\n|");
+        // if (i == 9) columns = 21;
+    }
+    for (int i = 0 ; i < 50 ; i++)
+            printf("_");
+
+    printf("\n|");
+    printf("\t memory usage = %d times " , memCount );
+    for(int j = 0 ; j < 2 ; j++)
+        printf("\t");
+    printf("|\n|");
+
+    for (int i = 0 ; i < 50 ; i++)
+            printf("_");
+    printf("\n|");
+
+    printf("number of instruction that have executed : %d" , cycleCount);
+    for(int j = 0 ; j < 1 ; j++)
+        printf("\t");
+    printf("|\n|");
+    for (int i = 0 ; i < 50 ; i++)
+            printf("_");
+
+}
+
 int main(){
 
+
+    DATA_MEMORY[6] = 5;
+    DATA_MEMORY[7] = -1;
+    DATA_MEMORY[8] = 2;
+
     char *Bnum;
-    long *nums; 
-    nums = readFile("program.mc");
+    long *instructions; 
+    instructions = readFile("program.mc");
     unsigned int pc = 0;
+    int cycleCount = 0;
+    int memCount = 0;
+
+    double regPercent[16];
+    for (int i = 0; i < 16; i++)
+        regPercent[i] = 0;
+
+    
     char *opcode;
     opcode = (char*)malloc(4+1);
 
@@ -196,14 +276,27 @@ int main(){
     bool BranchToPc = false;
     bool JumpToPc = false;
     bool regWrite = false;
+    bool regRead = false;
     bool MemWrite = false;
     bool Btaken = false;
+    
 
+    // declaring a key for user to press if he/she wants to check the next cycle.
+
+    printf("\n\n           ***WELCOME TO THE SIMULATOR ***             \n");
 
     while (1){
-        if (nums[pc] == 0) break;
-        else if (nums[pc] < 10){pc++; continue;}
-        Bnum = convertToBinary(nums[pc]);
+        // if the instruction is halt, end the execution
+        if (instructions[pc] == 0 || instructions[pc] == 234881024) break;
+
+        // if the instruction is directive , put the value in the data memory.
+        else if (instructions[pc] < 65536) {
+            DATA_MEMORY[pc] = instructions[pc]; 
+            pc++;
+            continue;
+        }
+
+        Bnum = convertToBinary(instructions[pc]);
 
         RegDest = false;
         ALUsrc = false;
@@ -266,7 +359,7 @@ int main(){
 
         
         // determine the opcode and calculate the control signals
-        controlUnit(opcode , &RegDest , &ALUsrc , &MemToReg , &JalrToReg , &BranchToPc , &JumpToPc , &regWrite , &MemWrite);
+        controlUnit(opcode , &RegDest , &ALUsrc , &MemToReg , &JalrToReg , &BranchToPc , &JumpToPc , &regWrite , &MemWrite , &memCount);
 
 
         // extend the immediate value , jump target address , rs to 32 bits
@@ -298,11 +391,13 @@ int main(){
         
         int rsValue = REGISTER_FILE[rsDec];
         int rtValue = REGISTER_FILE[rtDec];
+        regPercent[rsDec]++;
+        regPercent[rtDec]++;
         
         char* aluSrcNum = mux(extImm, convertToBinary(rtValue) , ALUsrc);
 
         // ALU section
-        int result = ALU(rsDec , convertToDecimal(aluSrcNum) , opcode , &Btaken);
+        int result = ALU(rsValue , convertToDecimal(aluSrcNum) , opcode , &Btaken);
         
 
 
@@ -320,6 +415,7 @@ int main(){
                 // choose the destination register from rs and rt
                 char* destinationReg = mux(extRd , extRt , RegDest);
                 REGISTER_FILE[convertToDecimal(destinationReg)] = convertToDecimal(MuxToReg);
+                regPercent[convertToDecimal(destinationReg)]++;
             }
         }
 
@@ -340,10 +436,28 @@ int main(){
         // choose from jump / jalr pc address or branch/pc+1 address
         pcS = mux( pcP3 , pcS , JumpToPc);
 
-        int x = convertToDecimal(pcS);
-        printf("%ld\n" , x);
-        pc++;
+        pc = convertToDecimal(pcS);
+
+        //show the register info to the user
+        cycleCount++;
+        showRegInfo(cycleCount);
+
+        // wait for the user to input a character and continue the program
+        char input;
+        while(1){
+        printf("\npress N to go to the next cycle | press E to exit : ");
+        scanf(" %c" , &input);
+        printf("\n");
+        if (input == 'N' || input == 'E')
+            break;
+        }
+        if (input == 'E')
+            break;
     }
+
+    calculateRegPercent(regPercent);
+    printf("\n");
+    showInfo(regPercent , cycleCount , memCount);
 
     return 0;
 }
